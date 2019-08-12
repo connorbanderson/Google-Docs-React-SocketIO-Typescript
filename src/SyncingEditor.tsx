@@ -2,9 +2,8 @@ import React, { useState, useRef, useEffect } from "react";
 import { initialValue } from "./slateInitialValue";
 import uuid from "uuid";
 import { Editor } from "slate-react";
-import { Operation } from "slate";
 import io from "socket.io-client";
-import { identifier } from "@babel/types";
+import { Operation, Value, ValueJSON } from "slate";
 
 const socket = io("http://localhost:4000");
 
@@ -17,18 +16,22 @@ export const SyncingEditor: React.FC<Props> = () => {
   const remote = useRef(false);
 
   useEffect(() => {
+    socket.once("init-value", (value: ValueJSON) =>
+      setValue(Value.fromJSON(value))
+    );
     socket.on(
       "new-remote-operations",
-      ({ editorID, ops }: { editorID: string; ops: string }) => {
+      ({ editorID, ops }: { editorID: string; ops: Operation[] }) => {
         if (id.current !== editorID) {
           remote.current = true;
-          JSON.parse(ops).forEach((op: any) =>
-            editorRef.current!.applyOperation(op)
-          );
+          ops.forEach((op: any) => editorRef.current!.applyOperation(op));
           remote.current = false;
         }
       }
     );
+    return () => {
+      socket.off("new-remote-operations");
+    };
   }, []);
 
   return (
@@ -58,7 +61,8 @@ export const SyncingEditor: React.FC<Props> = () => {
         if (ops.length && !remote.current) {
           socket.emit("new-operations", {
             editorID: id.current,
-            ops: JSON.stringify(ops)
+            ops,
+            value: opts.value.toJSON()
           });
         }
         setValue(opts.value);
