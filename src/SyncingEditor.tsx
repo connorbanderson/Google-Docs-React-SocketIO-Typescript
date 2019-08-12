@@ -1,28 +1,34 @@
 import React, { useState, useRef, useEffect } from "react";
 import { initialValue } from "./slateInitialValue";
-import Mitt from "mitt";
 import uuid from "uuid";
 import { Editor } from "slate-react";
 import { Operation } from "slate";
+import io from "socket.io-client";
+import { identifier } from "@babel/types";
+
+const socket = io("http://localhost:4000");
 
 interface Props {}
 
-const emitter = new Mitt();
-
 export const SyncingEditor: React.FC<Props> = () => {
   const [value, setValue] = useState(initialValue);
-  const editorID: any = uuid.v4();
+  const id: any = useRef(`${uuid.v4()}`);
   const editorRef = useRef<Editor | null>(null);
   const remote = useRef(false);
 
   useEffect(() => {
-    (emitter as any).on("*", (type: string, ops: Operation[]) => {
-      if (editorID.current !== type) {
-        remote.current = true;
-        ops.forEach(op => editorID.current!.applyOperation(op));
-        remote.current = false;
+    socket.on(
+      "new-remote-operations",
+      ({ editorID, ops }: { editorID: string; ops: string }) => {
+        if (id.current !== editorID) {
+          remote.current = true;
+          JSON.parse(ops).forEach((op: any) =>
+            editorRef.current!.applyOperation(op)
+          );
+          remote.current = false;
+        }
       }
-    });
+    );
   }, []);
 
   return (
@@ -50,7 +56,10 @@ export const SyncingEditor: React.FC<Props> = () => {
           .toJS()
           .map((o: any) => ({ ...o, data: { source: "one" } }));
         if (ops.length && !remote.current) {
-          emitter.emit(editorID.current, ops);
+          socket.emit("new-operations", {
+            editorID: id.current,
+            ops: JSON.stringify(ops)
+          });
         }
         setValue(opts.value);
       }}
